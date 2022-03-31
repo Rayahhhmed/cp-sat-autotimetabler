@@ -238,9 +238,27 @@ def define_min_gap_constraint(model: cp_model, global_solution_space: list, mapp
     min_intervals = MinuteInterval()
     for i in range(len(global_solution_space) - 1):
         min_gap = min_intervals.to_hours(abs((global_solution_space[i + 1].start - global_solution_space[i].end)))
-        print(min_gap)
-        model.Add(min_gap >= gap).OnlyEnforceIf(model.AddBoolOr([global_solution_space[i].assigned_bool_var,
-                                                                 global_solution_space[i + 1].assigned_bool_var]))
+        print(global_solution_space[i].assigned_bool_var)
+
+        model.AddBoolAnd(global_solution_space[i].assigned_bool_var.Not(),
+                         global_solution_space[i + 1].assigned_bool_var).OnlyEnforceIf(min_gap >= gap)
+
+
+def define_min_walking_constraint(model: cp_model, global_solution_space: list, mapped_by_course_data_set: list, gap: int):
+    min_intervals = MinuteInterval()
+    sum_day_intervals = 0
+    hashset = set()
+    minimize_objective_dist_variables = []
+    different_day_count = 0
+    for course_metadata in global_solution_space:
+        start = course_metadata.start
+        end = course_metadata.end
+        day_hour_interval_list = min_intervals.map_minute_interval_to_day_hour([start, end])
+        if day_hour_interval_list[DAY] in hashset:
+            minimize_objective_dist_variables.append()
+
+        hashset.add(day_hour_interval_list[DAY])
+
 
 
 def define_max_days_constraint(model: cp_model, global_solution_space: list, mapped_by_course_data_set: list,
@@ -257,6 +275,10 @@ def define_max_days_constraint(model: cp_model, global_solution_space: list, map
             different_day_count += 1
             hashset.add(day_hour_interval_list[DAY])
     model.Add(different_day_count <= max_days)
+
+
+def define_social_timetabling():
+
 
 
 # def get_distance(u, v):
@@ -410,10 +432,10 @@ def search_optimal_timetable():
     # }
     data = {
         "start": "9",
-        "end": "24",
+        "end": "20",
         "days": "12345",
         "gap": "2",
-        "max_days": "2",
+        "max_days": "3",
         "minimum_distance": "True",
         "periods":
             [
@@ -423,8 +445,8 @@ def search_optimal_timetable():
                 ],
                 [
                     [
-                        [3, 17, 18, 'a'],
-                        [4, 14, 18, 'a']
+                        [3, 14, 18, 'a'],
+                        [4, 11, 12, 'a']
                     ],
 
                     [
@@ -444,7 +466,7 @@ def search_optimal_timetable():
     define_max_one_class_per_course_constraint(model, global_solution_space, mapped_by_course_data_set)
     define_no_overlap_constraint(model, global_solution_space, mapped_by_course_data_set)
     define_max_days_constraint(model, global_solution_space, mapped_by_course_data_set, int(data['max_days']))
-    #define_min_gap_constraint(model, global_solution_space, mapped_by_course_data_set, int(data['gap']))
+   # define_min_gap_constraint(model, global_solution_space, mapped_by_course_data_set, int(data['gap']))
     solver = cp_model.CpSolver()
     status = solver.Solve(model)
 
