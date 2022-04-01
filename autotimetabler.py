@@ -3,8 +3,7 @@
 """
 
 import collections
-import math
-from typing import Tuple
+import re
 
 from ortools.sat.python import cp_model
 
@@ -17,18 +16,32 @@ END = 1
 FORCE_INCLUDE = 1
 
 
-class VarArraySolutionPrinter(cp_model.CpSolverSolutionCallback):
+def extract_course_name(course_bool: cp_model.IntVar):
+    pattern = re.compile(r'(\d+)_(\d+)_(\d+)')
+    name_str = str(course_bool.Name())
+    match = pattern.findall(name_str)
+    return match
+
+
+class PossibleTimetableSchedules(cp_model.CpSolverSolutionCallback):
     """Print intermediate solutions."""
 
-    def __init__(self, variables):
+    def __init__(self, variables, valid_timetables):
         cp_model.CpSolverSolutionCallback.__init__(self)
         self.__variables = variables
         self.__solution_count = 0
+        valid_timetables.append(variables)
 
     def on_solution_callback(self):
         self.__solution_count += 1
+        print('=====================================================')
+        print('Timetable: %i' % self.__solution_count)
         for v in self.__variables:
-            print('%s=%i' % (v, self.Value(v)), end=' ')
+            if self.Value(v.assigned_bool_var):
+                print(extract_course_name(v.assigned_bool_var))
+                # print('%s=%i' % (v, self.Value(v.assigned_bool_var)), end=' ')
+
+        print('=====================================================')
         print()
 
     def solution_count(self):
@@ -156,7 +169,6 @@ def populate_data_set(model: cp_model, mapped_by_course_data_set: list, course_m
         if period_id == START:
             # Always point to the first period in any given data set since the
             # rest that follows will be implied to always be true.
-            print('period_builder:', period_builder[period_id])
             mapped_by_course_data_set[course_id] = mapped_by_course_data_set[course_id] + [period_builder[period_id]]
         else:
             # This is the conditional chaining such that if one period is included in the period set, then the rest
@@ -222,7 +234,6 @@ def define_max_one_class_per_course_constraint(model: cp_model, global_solution_
     for course_id in range(len(mapped_by_course_data_set)):
         bool_vars = [course_metadata.assigned_bool_var for course_metadata in mapped_by_course_data_set[course_id]]
         model.AddExactlyOne(bool_vars)
-        print(bool_vars)
 
 
 def define_no_overlap_constraint(model: cp_model, global_solution_space: list, mapped_by_course_data_set: list):
@@ -234,17 +245,19 @@ def define_no_overlap_constraint(model: cp_model, global_solution_space: list, m
     model.AddNoOverlap(interval_list)
 
 
-def define_min_gap_constraint(model: cp_model, global_solution_space: list, mapped_by_course_data_set: list, gap: int):
+def define_min_gap_constraint(model: cp_model, global_solution_space: list,
+                              mapped_by_course_data_set: list, gap: int):
     min_intervals = MinuteInterval()
     for i in range(len(global_solution_space) - 1):
-        min_gap = min_intervals.to_hours(abs((global_solution_space[i + 1].start - global_solution_space[i].end)))
-        print(global_solution_space[i].assigned_bool_var)
+        # inject minimum
+        min_gap_min = min_intervals.to_minutes(gap)
+        print(global_solution_space[i + 1].interval.StartExpr() - global_solution_space[i].interval.EndExpr())
+        model.Add(global_solution_space[i + 1].interval.StartExpr() - global_solution_space[i].interval.EndExpr() >=
+                  min_gap_min)
 
-        model.AddBoolAnd(global_solution_space[i].assigned_bool_var.Not(),
-                         global_solution_space[i + 1].assigned_bool_var).OnlyEnforceIf(min_gap >= gap)
 
-
-def define_min_walking_constraint(model: cp_model, global_solution_space: list, mapped_by_course_data_set: list, gap: int):
+def define_min_walking_constraint(model: cp_model, global_solution_space: list, mapped_by_course_data_set: list,
+                                  gap: int):
     min_intervals = MinuteInterval()
     sum_day_intervals = 0
     hashset = set()
@@ -255,10 +268,10 @@ def define_min_walking_constraint(model: cp_model, global_solution_space: list, 
         end = course_metadata.end
         day_hour_interval_list = min_intervals.map_minute_interval_to_day_hour([start, end])
         if day_hour_interval_list[DAY] in hashset:
-            minimize_objective_dist_variables.append()
+            pass
+            # minimize_objective_dist_variables.append()
 
         hashset.add(day_hour_interval_list[DAY])
-
 
 
 def define_max_days_constraint(model: cp_model, global_solution_space: list, mapped_by_course_data_set: list,
@@ -278,7 +291,7 @@ def define_max_days_constraint(model: cp_model, global_solution_space: list, map
 
 
 def define_social_timetabling():
-
+    pass
 
 
 # def get_distance(u, v):
@@ -312,153 +325,153 @@ def search_optimal_timetable():
         Creating a new model for CP SAT. Using this over
         SCP.
     """
-    # data = {
-    #     "start": "9",
-    #     "end": "19",
-    #     "days": "12",
-    #     "gap": "1",
-    #     "max_days": "2",
-    #     "minimum_distance": "True",
-    #     "periods":
-    #         [
-    #             [
-    #                 [[5, 11, 12, 'a']],
-    #                 [[5, 13, 14, 'a']],
-    #                 [[4, 10, 11, 'b']],
-    #                 [[4, 14, 15, 'c']],
-    #                 [[2, 9, 10, 'b']],
-    #                 [[2, 15, 16, 'a']],
-    #                 [[3, 12, 13, 'b']]
-    #             ],
-    #             [
-    #                 [
-    #                     [1, 17, 18, 'a'],
-    #                     [4, 17, 18, 'a']
-    #                 ],
-    #                 [
-    #                     [1, 17, 18, 'b'],
-    #                     [4, 17, 18, 'b']
-    #                 ],
-    #                 [
-    #                     [1, 17, 18, 'b'],
-    #                     [4, 17, 18, 'b']
-    #                 ],
-    #                 [
-    #                     [1, 18, 19, 'a'],
-    #                     [4, 18, 19, 'a']
-    #                 ],
-    #                 [
-    #                     [2, 9, 10, 'a'],
-    #                     [4, 9, 10, 'a']
-    #                 ],
-    #                 [
-    #                     [2, 9, 10, 'a'],
-    #                     [4, 9, 10, 'a']
-    #                 ],
-    #                 [
-    #                     [2, 9, 10, 'a'],
-    #                     [4, 9, 10, 'a']
-    #                 ],
-    #                 [
-    #                     [2, 12, 13, 'a'],
-    #                     [4, 12, 13, 'a']
-    #                 ],
-    #                 [
-    #                     [2, 12, 13, 'b'],
-    #                     [4, 12, 13, 'b']
-    #                 ],
-    #                 [
-    #                     [2, 12, 13, 'c'],
-    #                     [4, 12, 13, 'c']
-    #                 ],
-    #                 [
-    #                     [2, 15, 16, 'a'],
-    #                     [4, 15, 16, 'b']
-    #                 ],
-    #                 [
-    #                     [2, 15, 16, 'c'],
-    #                     [4, 15, 16, 'c']
-    #                 ],
-    #                 [
-    #                     [2, 15, 16, 'a'],
-    #                     [4, 15, 16, 'a']
-    #                 ],
-    #                 [
-    #                     [3, 11, 12, 'a'],
-    #                     [5, 11, 12, 'a']
-    #                 ],
-    #                 [
-    #                     [3, 11, 12, 'a'],
-    #                     [5, 11, 12, 'a']
-    #                 ],
-    #                 [
-    #                     [3, 11, 12, 'a'],
-    #                     [5, 11, 12, 'a']
-    #                 ],
-    #                 [
-    #                     [3, 14, 15, 'a'],
-    #                     [5, 14, 15, 'a']
-    #                 ],
-    #                 [
-    #                     [3, 14, 15, 'b'],
-    #                     [5, 14, 15, 'b']
-    #                 ],
-    #                 [
-    #                     [3, 14, 15, 'b'],
-    #                     [5, 14, 15, 'b']
-    #                 ]
-    #             ],
-    #             [
-    #                 [[4, 10, 11, 'c']],
-    #                 [[4, 10, 11, 'c']],
-    #                 [[2, 9, 10, 'c']],
-    #                 [[2, 9, 10, 'b']],
-    #                 [[2, 9, 10, 'a']],
-    #                 [[2, 9, 10, 'c']],
-    #                 [[2, 13, 14, 'c']],
-    #                 [[2, 13, 14, 'c']],
-    #                 [[2, 13, 14, 'c']],
-    #                 [[2, 13, 14, 'c']],
-    #                 [[3, 11, 12, 'c']],
-    #                 [[3, 11, 12, 'c']],
-    #                 [[3, 11, 12, 'c']],
-    #                 [[3, 11, 12, 'c']],
-    #                 [[3, 16, 17, 'c']],
-    #                 [[3, 16, 17, 'c']],
-    #                 [[3, 16, 17, 'c']],
-    #                 [[3, 16, 17, 'c']]
-    #             ]
-    #         ]
-    # }
     data = {
         "start": "9",
-        "end": "20",
-        "days": "12345",
-        "gap": "2",
-        "max_days": "3",
+        "end": "19",
+        "days": "12",
+        "gap": "1",
+        "max_days": "2",
         "minimum_distance": "True",
         "periods":
             [
                 [
-                    [[3, 14, 15, 'a']],
-                    [[4, 11, 12, 'b']],
+                    [[5, 11, 12, 'a']],
+                    [[5, 13, 14, 'a']],
+                    [[4, 10, 11, 'b']],
+                    [[4, 14, 15, 'c']],
+                    [[2, 9, 10, 'b']],
+                    [[2, 15, 16, 'a']],
+                    [[3, 12, 13, 'b']]
                 ],
                 [
                     [
-                        [3, 14, 18, 'a'],
-                        [4, 11, 12, 'a']
+                        [1, 17, 18, 'a'],
+                        [4, 17, 18, 'a']
                     ],
-
                     [
-                        [4, 17, 18, 'b'],
-                        [3, 14, 18, 'b']
+                        [1, 17, 18, 'b'],
+                        [4, 17, 18, 'b']
                     ],
+                    [
+                        [1, 17, 18, 'b'],
+                        [4, 17, 18, 'b']
+                    ],
+                    [
+                        [1, 18, 19, 'a'],
+                        [4, 18, 19, 'a']
+                    ],
+                    [
+                        [2, 9, 10, 'a'],
+                        [4, 9, 10, 'a']
+                    ],
+                    [
+                        [2, 9, 10, 'a'],
+                        [4, 9, 10, 'a']
+                    ],
+                    [
+                        [2, 9, 10, 'a'],
+                        [4, 9, 10, 'a']
+                    ],
+                    [
+                        [2, 12, 13, 'a'],
+                        [4, 12, 13, 'a']
+                    ],
+                    [
+                        [2, 12, 13, 'b'],
+                        [4, 12, 13, 'b']
+                    ],
+                    [
+                        [2, 12, 13, 'c'],
+                        [4, 12, 13, 'c']
+                    ],
+                    [
+                        [2, 15, 16, 'a'],
+                        [4, 15, 16, 'b']
+                    ],
+                    [
+                        [2, 15, 16, 'c'],
+                        [4, 15, 16, 'c']
+                    ],
+                    [
+                        [2, 15, 16, 'a'],
+                        [4, 15, 16, 'a']
+                    ],
+                    [
+                        [3, 11, 12, 'a'],
+                        [5, 11, 12, 'a']
+                    ],
+                    [
+                        [3, 11, 12, 'a'],
+                        [5, 11, 12, 'a']
+                    ],
+                    [
+                        [3, 11, 12, 'a'],
+                        [5, 11, 12, 'a']
+                    ],
+                    [
+                        [3, 14, 15, 'a'],
+                        [5, 14, 15, 'a']
+                    ],
+                    [
+                        [3, 14, 15, 'b'],
+                        [5, 14, 15, 'b']
+                    ],
+                    [
+                        [3, 14, 15, 'b'],
+                        [5, 14, 15, 'b']
+                    ]
                 ],
                 [
-                    [[4, 12, 13, 'c']],
+                    [[4, 10, 11, 'c']],
+                    [[4, 10, 11, 'c']],
+                    [[2, 9, 10, 'c']],
+                    [[2, 9, 10, 'b']],
+                    [[2, 9, 10, 'a']],
+                    [[2, 9, 10, 'c']],
+                    [[2, 13, 14, 'c']],
+                    [[2, 13, 14, 'c']],
+                    [[2, 13, 14, 'c']],
+                    [[2, 13, 14, 'c']],
+                    [[3, 11, 12, 'c']],
+                    [[3, 11, 12, 'c']],
+                    [[3, 11, 12, 'c']],
+                    [[3, 11, 12, 'c']],
+                    [[3, 16, 17, 'c']],
+                    [[3, 16, 17, 'c']],
+                    [[3, 16, 17, 'c']],
+                    [[3, 16, 17, 'c']]
                 ]
             ]
     }
+    # data = {
+    #     "start": "9",
+    #     "end": "20",
+    #     "days": "1243",
+    #     "gap": "1",
+    #     "max_days": "3",
+    #     "minimum_distance": "True",
+    #     "periods":
+    #         [
+    #             [
+    #                 [[3, 14, 15, 'a']],
+    #                 [[3, 19, 20, 'b']],
+    #             ],
+    #             [
+    #                 [
+    #                     [2, 14, 18, 'a'],
+    #                     [4, 15, 18, 'a']
+    #                 ],
+    #
+    #                 [
+    #                     [4, 17, 18, 'b'],
+    #                     [3, 16, 18, 'b']
+    #                 ],
+    #             ],
+    #             [
+    #                 [[4, 12, 15, 'c']],
+    #             ]
+    #         ]
+    # }
 
     model = cp_model.CpModel()
     # Course mapping for the unique classes.
@@ -466,18 +479,23 @@ def search_optimal_timetable():
     define_max_one_class_per_course_constraint(model, global_solution_space, mapped_by_course_data_set)
     define_no_overlap_constraint(model, global_solution_space, mapped_by_course_data_set)
     define_max_days_constraint(model, global_solution_space, mapped_by_course_data_set, int(data['max_days']))
-   # define_min_gap_constraint(model, global_solution_space, mapped_by_course_data_set, int(data['gap']))
+    # define_min_gap_constraint(model, global_solution_space, mapped_by_course_data_set, int(data['gap']))
     solver = cp_model.CpSolver()
-    status = solver.Solve(model)
-
-    # solution_printer = VarArraySolutionPrinter(global_solution_space)
     # Enumerate all solutions.
     solver.parameters.enumerate_all_solutions = True
     # Solve.
-    status = solver.Solve(model)
+    valid_timetables = []
+    solution_printer = PossibleTimetableSchedules(global_solution_space, valid_timetables)
+    status = solver.Solve(model, solution_printer)
     print(solver.StatusName(status))
-    # print('Status = %s' % solver.StatusName(status))
-    # print('Number of solutions found: %i' % solution_printer.solution_count())
+    if status == cp_model.OPTIMAL:
+        print('\nStatistics')
+        print('  - conflicts: %i' % solver.NumConflicts())
+        print('  - branches : %i' % solver.NumBranches())
+        print('  - wall time: %f s' % solver.WallTime())
+        print('  - solutions: %i' % solution_printer.solution_count())
+
+    print(valid_timetables)
 
 
 search_optimal_timetable()
