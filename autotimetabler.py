@@ -151,11 +151,15 @@ def populate_data_set(model: cp_model, mapped_by_course_data_set: list, course_m
         start_end_list = min_interval_instance.map_day_hour_to_minute_interval(period)
         start = start_end_list[START]
         end = start_end_list[END]
+        location = period[LOCATION]
         # The data name for all the variables are going to be of the schematic
         # period_(course id)_(class_id)_(period_id)
-        data_name = 'period_%i_%i_%i' % (course_id, classes_id, period_id)
+        # assumption that the same location and same time classes are the same
+        # class and not unique.
+        data_name = 'period_%i_%i_%i_%s' % (course_id, classes_id, period_id, location)
         bool_var = model.NewBoolVar(data_name + '_bool')
-        interval_var = model.NewOptionalIntervalVar(start, end - start, end, bool_var, data_name + '_interval')
+        interval_var = model.NewOptionalIntervalVar(start, end - start, end, bool_var, data_name + '_' +
+                                                    location + '_interval')
         # Mutate the list to use the period builder for the tuple containing the model data
         # to save space.
         period_builder[period_id] = course_metadata(course=course_id, start=start, end=end, interval=interval_var,
@@ -173,9 +177,8 @@ def populate_data_set(model: cp_model, mapped_by_course_data_set: list, course_m
         else:
             # This is the conditional chaining such that if one period is included in the period set, then the rest
             # follows to be included force fully.
-            model.Add(period_builder[period_id].assigned_bool_var == FORCE_INCLUDE).OnlyEnforceIf(
-                period_builder[START].assigned_bool_var)
-
+            model.AddImplication(period_builder[period_id].assigned_bool_var, period_builder[START].assigned_bool_var)
+            model.AddImplication(period_builder[START].assigned_bool_var, period_builder[period_id].assigned_bool_var)
     return global_solution_space, mapped_by_course_data_set
 
 
@@ -213,7 +216,14 @@ def define_day_time_constraints_for_variables(data: dict, model: cp_model):
                     if period[START_TIME] >= int(data['start']) and period[END_TIME] <= int(data['end']):
                         # The given data set is within the feasible conditions that they are within a given
                         period_builder.append(period)
-
+                    else:
+                        # If there are periods which are interlocked, their optimality is checked as well.
+                        period_builder.clear()
+                        break
+                else:
+                    # The period falls in a day that is not in the days the user wants to go university.
+                    period_builder.clear()
+                    break
             if period_builder:
                 # The given periods in the class constraints to a feasible day and time slot only.
                 # We could call the constraint model to constraint the variables but this is another alternative to that
@@ -301,25 +311,7 @@ def define_social_timetabling():
 #             if i[0] == v or i[0] == v:
 #                 return i[2]
 #
-#
-# class VarArraySolutionPrinter(cp_model.CpSolverSolutionCallback):
-#     """Print intermediate solutions."""
-#
-#     def __init__(self, variables):
-#         cp_model.CpSolverSolutionCallback.__init__(self)
-#         self.__variables = variables
-#         self.__solution_count = 0
-#
-#     def on_solution_callback(self):
-#         self.__solution_count += 1
-#         for v in self.__variables:
-#             print('%s=%i' % (v, self.Value(v)), end=' ')
-#         print()
-#
-#     def solution_count(self):
-#         return self.__solution_count
-#
-#
+
 def search_optimal_timetable():
     """
         Creating a new model for CP SAT. Using this over
@@ -328,127 +320,136 @@ def search_optimal_timetable():
     data = {
         "start": "9",
         "end": "19",
-        "days": "12",
+        "days": "12345",
         "gap": "1",
-        "max_days": "2",
+        "max_days": "5",
         "minimum_distance": "True",
         "periods":
             [
                 [
                     [[5, 11, 12, 'a']],
-                    [[5, 13, 14, 'a']],
-                    [[4, 10, 11, 'b']],
-                    [[4, 14, 15, 'c']],
-                    [[2, 9, 10, 'b']],
-                    [[2, 15, 16, 'a']],
-                    [[3, 12, 13, 'b']]
+                    [[5, 11, 12, 'b']],
+                    # [[4, 10, 11, 'b']],
+                    # [[4, 14, 15, 'c']],
+                    # [[2, 9, 10, 'b']],
+                    # [[2, 15, 16, 'a']],
+                    # [[3, 12, 13, 'b']]
                 ],
                 [
                     [
                         [1, 17, 18, 'a'],
-                        [4, 17, 18, 'a']
+                        [2, 17, 18, 'a']
                     ],
                     [
                         [1, 17, 18, 'b'],
-                        [4, 17, 18, 'b']
+                        [2, 17, 18, 'b']
                     ],
-                    [
-                        [1, 17, 18, 'b'],
-                        [4, 17, 18, 'b']
-                    ],
-                    [
-                        [1, 18, 19, 'a'],
-                        [4, 18, 19, 'a']
-                    ],
-                    [
-                        [2, 9, 10, 'a'],
-                        [4, 9, 10, 'a']
-                    ],
-                    [
-                        [2, 9, 10, 'a'],
-                        [4, 9, 10, 'a']
-                    ],
-                    [
-                        [2, 9, 10, 'a'],
-                        [4, 9, 10, 'a']
-                    ],
-                    [
-                        [2, 12, 13, 'a'],
-                        [4, 12, 13, 'a']
-                    ],
-                    [
-                        [2, 12, 13, 'b'],
-                        [4, 12, 13, 'b']
-                    ],
-                    [
-                        [2, 12, 13, 'c'],
-                        [4, 12, 13, 'c']
-                    ],
-                    [
-                        [2, 15, 16, 'a'],
-                        [4, 15, 16, 'b']
-                    ],
-                    [
-                        [2, 15, 16, 'c'],
-                        [4, 15, 16, 'c']
-                    ],
-                    [
-                        [2, 15, 16, 'a'],
-                        [4, 15, 16, 'a']
-                    ],
-                    [
-                        [3, 11, 12, 'a'],
-                        [5, 11, 12, 'a']
-                    ],
-                    [
-                        [3, 11, 12, 'a'],
-                        [5, 11, 12, 'a']
-                    ],
-                    [
-                        [3, 11, 12, 'a'],
-                        [5, 11, 12, 'a']
-                    ],
-                    [
-                        [3, 14, 15, 'a'],
-                        [5, 14, 15, 'a']
-                    ],
-                    [
-                        [3, 14, 15, 'b'],
-                        [5, 14, 15, 'b']
-                    ],
-                    [
-                        [3, 14, 15, 'b'],
-                        [5, 14, 15, 'b']
-                    ]
+                    # [
+                    #     [1, 17, 18, 'b'],
+                    #     [4, 17, 18, 'b']
+                    # ],
+                    # [
+                    #     [1, 18, 19, 'a'],
+                    #     [4, 18, 19, 'a']
+                    # ],
+                    # [
+                    #     [2, 9, 10, 'a'],
+                    #     [4, 9, 10, 'a']
+                    # ],
+                    # [
+                    #     [2, 9, 10, 'a'],
+                    #     [4, 9, 10, 'a']
+                    # ],
+                    # [
+                    #     [2, 9, 10, 'a'],
+                    #     [4, 9, 10, 'a']
+                    # ],
+                    # [
+                    #     [2, 12, 13, 'a'],
+                    #     [4, 12, 13, 'a']
+                    # ],
+                    # [
+                    #     [2, 12, 13, 'b'],
+                    #     [4, 12, 13, 'b']
+                    # ],
+                    # [
+                    #     [2, 12, 13, 'c'],
+                    #     [4, 12, 13, 'c']
+                    # ],
+                    # [
+                    #     [2, 15, 16, 'a'],
+                    #     [4, 15, 16, 'b']
+                    # ],
+                    # [
+                    #     [2, 15, 16, 'c'],
+                    #     [4, 15, 16, 'c']
+                    # ],
+                    # [
+                    #     [2, 15, 16, 'a'],
+                    #     [4, 15, 16, 'a']
+                    # ],
+                    # [
+                    #     [3, 11, 12, 'a'],
+                    #     [5, 11, 12, 'a']
+                    # ],
+                    # [
+                    #     [3, 11, 12, 'a'],
+                    #     [5, 11, 12, 'a']
+                    # ],
+                    # [
+                    #     [3, 11, 12, 'a'],
+                    #     [5, 11, 12, 'a']
+                    # ],
+                    # [
+                    #     [3, 14, 15, 'a'],
+                    #     [5, 14, 15, 'a']
+                    # ],
+                    # [
+                    #     [3, 14, 15, 'b'],
+                    #     [5, 14, 15, 'b']
+                    # ],
+                    # [
+                    #     [3, 14, 15, 'b'],
+                    #     [5, 14, 15, 'b']
+                    # ]
                 ],
                 [
-                    [[4, 10, 11, 'c']],
-                    [[4, 10, 11, 'c']],
-                    [[2, 9, 10, 'c']],
-                    [[2, 9, 10, 'b']],
-                    [[2, 9, 10, 'a']],
-                    [[2, 9, 10, 'c']],
-                    [[2, 13, 14, 'c']],
-                    [[2, 13, 14, 'c']],
-                    [[2, 13, 14, 'c']],
-                    [[2, 13, 14, 'c']],
-                    [[3, 11, 12, 'c']],
-                    [[3, 11, 12, 'c']],
-                    [[3, 11, 12, 'c']],
-                    [[3, 11, 12, 'c']],
-                    [[3, 16, 17, 'c']],
+                    # [[4, 10, 11, 'c']],
+                    # [[4, 10, 11, 'c']],
+                    # [[2, 9, 10, 'c']],
+                    # [[2, 9, 10, 'b']],
+                    # [[2, 9, 10, 'a']],
+                    # [[2, 9, 10, 'c']],
+                    # [[2, 13, 14, 'c']],
+                    # [[2, 13, 14, 'c']],
+                    # [[2, 13, 14, 'c']],
+                    # [[2, 13, 14, 'c']],
+                    # [[3, 11, 12, 'c']],
+                    # [[3, 11, 12, 'c']],
+                    # [[3, 11, 12, 'c']],
+                    # [[3, 11, 12, 'c']],
+                    # [[3, 16, 17, 'c']],
                     [[3, 16, 17, 'c']],
                     [[3, 16, 17, 'c']],
                     [[3, 16, 17, 'c']]
                 ]
             ]
     }
+
+    '''
+        Possible new constraints: 
+            * Implementing the gaps
+            * Implementing the min distance 
+            * implementing online periods 
+            * Implementing periods which the user prefers (?)
+    '''
+    #
     # data = {
     #     "start": "9",
-    #     "end": "20",
-    #     "days": "1243",
+    #     "end": "19",
+    #     "days": "1234",
     #     "gap": "1",
-    #     "max_days": "3",
+    #     "max_days": "8",
     #     "minimum_distance": "True",
     #     "periods":
     #         [
@@ -458,14 +459,14 @@ def search_optimal_timetable():
     #             ],
     #             [
     #                 [
-    #                     [2, 14, 18, 'a'],
+    #                     [2, 12, 15, 'a'],
     #                     [4, 15, 18, 'a']
     #                 ],
     #
-    #                 [
-    #                     [4, 17, 18, 'b'],
-    #                     [3, 16, 18, 'b']
-    #                 ],
+    #                 # [
+    #                 #     [4, 17, 18, 'b'],
+    #                 #     [5, 16, 18, 'b']
+    #                 # ],
     #             ],
     #             [
     #                 [[4, 12, 15, 'c']],
